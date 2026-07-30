@@ -13,7 +13,10 @@
     "build:dashboard": "vendure build dashboard",
     "start:server": "node ./dist/index.js",
     "start:worker": "node ./dist/index-worker.js",
-    "start": "vendure start all"
+    "start": "vendure start all",
+    "migration:generate": "ts-node ./src/migration.ts generate",
+    "migration:run": "ts-node ./src/migration.ts run",
+    "migration:revert": "ts-node ./src/migration.ts revert"
   },
   "dependencies": {
     "@vendure/asset-server-plugin": "3.7.1",

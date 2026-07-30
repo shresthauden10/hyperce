@@ -1,8 +1,18 @@
-FROM node:22-alpine AS build
-
+FROM node:22-alpine AS base
 WORKDIR /app
 COPY package*.json ./
+
+FROM base AS dependencies
 RUN npm ci
+
+FROM dependencies AS development
+ENV NODE_ENV=development
+RUN mkdir -p /app/.tanstack/tmp /app/src/gql && chmod -R 777 /app/.tanstack /app/src
+COPY . .
+EXPOSE 3000
+CMD ["npm", "run", "dev"]
+
+FROM dependencies AS build
 COPY . .
 RUN npm run build
 
