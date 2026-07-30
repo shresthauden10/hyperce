@@ -4,4 +4,14 @@ admin-ui
 static/assets
 static/email/test-emails
 .vendure/
+
 .env
+.env.*
+!.env.example
+!.env.production.example
+
+helm/**/*.tgz
+helm/**/charts/*.tgz
+
+.DS_Store
+*.log
