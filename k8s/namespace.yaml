@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vendure
+  labels:
+    app.kubernetes.io/part-of: vendure
+    app.kubernetes.io/managed-by: kubectl

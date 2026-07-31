@@ -13,5 +13,9 @@ static/email/test-emails
 helm/**/*.tgz
 helm/**/charts/*.tgz
 
+
 .DS_Store
 *.log
+ghcr-secret.yaml
+kind-cluster.yaml
+secret.yaml
