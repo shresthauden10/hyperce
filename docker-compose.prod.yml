@@ -1,0 +1,75 @@
+name: vendure-shop-prod
+
+services:
+  migrate:
+    build:
+      context: .
+      target: production
+    image: ghcr.io/shresthauden10/my-shop-prod 
+    environment:
+      APP_ENV: production
+      PORT: "3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-vendure}
+      DB_SCHEMA: public
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME not set}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD not set}
+      COOKIE_SECRET: ${COOKIE_SECRET:?COOKIE_SECRET not set}
+      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:?SUPERADMIN_USERNAME not set}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:?SUPERADMIN_PASSWORD not set}
+    command: ["node", "dist/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    image: ghcr.io/shresthauden10/my-shop-prod
+    environment:
+        APP_ENV: production
+        PORT: "3000"
+        DB_HOST: postgres
+        DB_PORT: "5432"
+        DB_NAME: ${DB_NAME:-vendure}
+        DB_SCHEMA: public
+        DB_USERNAME: ${DB_USERNAME:?DB_USERNAME not set}
+        DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD not set}
+        COOKIE_SECRET: ${COOKIE_SECRET:?COOKIE_SECRET not set}
+        SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:?SUPERADMIN_USERNAME not set}
+        SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:?SUPERADMIN_PASSWORD not set}
+    command: ["node", "dist/index.js"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - assets_data:/app/static/assets
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-vendure}
+      POSTGRES_USER: ${DB_USERNAME:-vendure}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env.production}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-vendure} -d ${DB_NAME:-vendure}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  assets_data:
+    driver: local
