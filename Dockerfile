@@ -24,6 +24,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build --chown=vendure:vendure /app/dist ./dist
 COPY --from=build --chown=vendure:vendure /app/static ./static
+RUN mkdir -p /app/static/assets && chown -R vendure:vendure /app/static/assets
 USER vendure
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
