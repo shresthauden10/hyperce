@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vendure-postgres
+  namespace: vendure
+  labels:
+    app.kubernetes.io/name: vendure-postgres
+    app.kubernetes.io/instance: vendure-postgres
+    app.kubernetes.io/version: "18"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: vendure
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  serviceName: vendure-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vendure-postgres
+  template:
+    metadata:
+      labels:
+        app: vendure-postgres
+        app.kubernetes.io/name: vendure-postgres
+        app.kubernetes.io/instance: vendure-postgres
+        app.kubernetes.io/version: "18"
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: vendure
+        app.kubernetes.io/managed-by: kubectl
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:18-alpine
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: vendure-secrets
+                  key: DB_USERNAME
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vendure-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: vendure-config
+                  key: DB_NAME
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vendure-postgres
+  namespace: vendure
+  labels:
+    app.kubernetes.io/name: vendure-postgres
+    app.kubernetes.io/instance: vendure-postgres
+    app.kubernetes.io/version: "18"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: vendure
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  clusterIP: None
+  selector:
+    app: vendure-postgres
+  ports:
+    - port: 5432

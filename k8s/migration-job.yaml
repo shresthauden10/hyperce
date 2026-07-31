@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vendure-app-migrate
+  namespace: vendure
+  labels:
+    app.kubernetes.io/name: vendure-app
+    app.kubernetes.io/instance: vendure-app
+    app.kubernetes.io/version: "3.7.1"
+    app.kubernetes.io/component: migrate
+    app.kubernetes.io/part-of: vendure
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vendure-app
+        app.kubernetes.io/instance: vendure-app
+        app.kubernetes.io/version: "3.7.1"
+        app.kubernetes.io/component: migrate
+        app.kubernetes.io/part-of: vendure
+        app.kubernetes.io/managed-by: kubectl
+    spec:
+      serviceAccountName: vendure-app
+      imagePullSecrets:
+        - name: ghcr-secret
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/shresthauden10/my-shop-prod:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          command: ["node", "dist/migrate.js"]
+          envFrom:
+            - configMapRef:
+                name: vendure-config
+            - secretRef:
+                name: vendure-secrets
+          volumeMounts:
+            - name: assets
+              mountPath: /app/static/assets
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      volumes:
+        - name: assets
+          persistentVolumeClaim:
+            claimName: vendure-shop-assets
