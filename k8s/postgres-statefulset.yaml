@@ -9,7 +9,10 @@ metadata:
     app.kubernetes.io/version: "18"
     app.kubernetes.io/component: database
     app.kubernetes.io/part-of: vendure
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vendure
+    meta.helm.sh/release-namespace: vendure
 spec:
   serviceName: vendure-postgres
   replicas: 1
@@ -25,7 +28,7 @@ spec:
         app.kubernetes.io/version: "18"
         app.kubernetes.io/component: database
         app.kubernetes.io/part-of: vendure
-        app.kubernetes.io/managed-by: kubectl
+        app.kubernetes.io/managed-by: Helm
     spec:
       securityContext:
         runAsNonRoot: true
@@ -95,7 +98,10 @@ metadata:
     app.kubernetes.io/version: "18"
     app.kubernetes.io/component: database
     app.kubernetes.io/part-of: vendure
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vendure
+    meta.helm.sh/release-namespace: vendure
 spec:
   clusterIP: None
   selector:

@@ -1,0 +1,58 @@
+image:
+  repository: ghcr.io/shresthauden10/my-shop-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+serviceAccount:
+  create: true
+  name: vendure-app
+  automount: false
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  host: localhost
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+
+assets:
+  storage: 5Gi
+  storageClassName: standard
+
+postgres:
+  enabled: true
+  storage: 5Gi
+  storageClassName: standard
+
+env:
+  APP_ENV: production
+  PORT: "3000"
+  DB_HOST: vendure-postgres
+  DB_PORT: "5432"
+  DB_NAME: vendure
+  DB_SCHEMA: public
+
+secrets:
+  dbUsername: vendure
+  dbPassword: changeme
+  cookieSecret: changeme
+  superadminUsername: superadmin
+  superadminPassword: changeme

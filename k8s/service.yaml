@@ -9,7 +9,10 @@ metadata:
     app.kubernetes.io/version: "3.7.1"
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: vendure
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vendure
+    meta.helm.sh/release-namespace: vendure
 spec:
   selector:
     app.kubernetes.io/name: vendure-app
