@@ -19,3 +19,4 @@ helm/**/charts/*.tgz
 ghcr-secret.yaml
 kind-cluster.yaml
 secret.yaml
+values.secrets.yaml

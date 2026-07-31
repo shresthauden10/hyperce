@@ -4,4 +4,7 @@ metadata:
   name: vendure
   labels:
     app.kubernetes.io/part-of: vendure
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vendure
+    meta.helm.sh/release-namespace: vendure

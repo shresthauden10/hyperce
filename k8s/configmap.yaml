@@ -9,7 +9,10 @@ metadata:
     app.kubernetes.io/version: "3.7.1"
     app.kubernetes.io/component: config
     app.kubernetes.io/part-of: vendure
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vendure
+    meta.helm.sh/release-namespace: vendure
 data:
   APP_ENV: "production"
   PORT: "3000"
