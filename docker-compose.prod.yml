@@ -2,10 +2,7 @@ name: vendure-shop-prod
 
 services:
   migrate:
-    build:
-      context: .
-      target: production
-    image: ghcr.io/shresthauden10/my-shop-prod 
+    image: ghcr.io/shresthauden10/hyperce:${IMAGE_TAG:-latest}
     environment:
       APP_ENV: production
       PORT: "3000"
@@ -25,7 +22,7 @@ services:
     restart: "no"
 
   app:
-    image: ghcr.io/shresthauden10/my-shop-prod
+    image: ghcr.io/shresthauden10/hyperce:${IMAGE_TAG:-latest}
     environment:
         APP_ENV: production
         PORT: "3000"
