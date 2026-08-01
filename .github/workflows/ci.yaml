@@ -34,18 +34,16 @@ jobs:
         with:
           version: v3.18.4
 
-      - run: helm lint ./helm/vendure-shop
+      - run: helm lint ./helm/vendure
 
-      - name: Render chart (bundled Postgres + ingress + autoscaling paths)
+      - name: Render chart (bundled Postgres + ingress paths)
         run: |
-          helm template vendure-shop ./helm/vendure \
+          helm template vendure ./helm/vendure \
+            --set secrets.dbPassword=ci-placeholder \
             --set secrets.cookieSecret=ci-placeholder \
             --set secrets.superadminPassword=ci-placeholder \
-            --set postgresql.enabled=true \
-            --set postgresql.auth.password=ci-placeholder \
+            --set postgres.enabled=true \
             --set ingress.enabled=true \
-            --set server.autoscaling.enabled=true \
-            --set podDisruptionBudget.enabled=true \
             > /tmp/rendered.yaml
 
       - name: Validate rendered manifests against the Kubernetes API schema
@@ -66,7 +64,7 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
-          target: runtime
+          target: production
           push: false
           load: true
           tags: vendure-shop:ci
