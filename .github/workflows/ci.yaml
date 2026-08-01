@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+  lint-helm-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
+        with:
+          version: v3.18.4
+
+      - run: helm lint ./helm/vendure-shop
+
+      - name: Render chart (bundled Postgres + ingress + autoscaling paths)
+        run: |
+          helm template vendure-shop ./helm/vendure \
+            --set secrets.cookieSecret=ci-placeholder \
+            --set secrets.superadminPassword=ci-placeholder \
+            --set postgresql.enabled=true \
+            --set postgresql.auth.password=ci-placeholder \
+            --set ingress.enabled=true \
+            --set server.autoscaling.enabled=true \
+            --set podDisruptionBudget.enabled=true \
+            > /tmp/rendered.yaml
+
+      - name: Validate rendered manifests against the Kubernetes API schema
+        uses: helm/kind-action@0b5c88445f37b7e12a2ce1ecca7805b9046a74db
+        with:
+          cluster_name: ci-validate
+
+      - run: kubectl apply --dry-run=server -f /tmp/rendered.yaml -n default
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          target: runtime
+          push: false
+          load: true
+          tags: vendure-shop:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
