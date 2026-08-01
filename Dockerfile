@@ -21,7 +21,8 @@ RUN addgroup -S vendure && adduser -S vendure -G vendure
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=vendure:vendure /app/dist ./dist
 COPY --from=build --chown=vendure:vendure /app/static ./static
 RUN mkdir -p /app/static/assets && chown -R vendure:vendure /app/static/assets
