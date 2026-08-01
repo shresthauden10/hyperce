@@ -13,3 +13,13 @@ CVE-2026-39822
 CVE-2026-39836
 CVE-2026-42499
 CVE-2026-42504
+
+# Newly surfaced after upgrading trivy-action to v0.36.0 (newer scan
+# engine/DB catches more Go stdlib CVEs than the previous version).
+# Same embedded esbuild Go binary, never executed at runtime — same
+# justification as above.
+CVE-2025-68121
+CVE-2025-61726
+CVE-2025-61729
+CVE-2026-25679
+CVE-2026-27145
