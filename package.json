@@ -19,8 +19,9 @@
     "migration:revert": "ts-node ./src/migration.ts revert"
   },
   "dependencies": {
-    "@vendure/asset-server-plugin": "3.7.1",
-    "@vendure/core": "3.7.1",
+    "@nestjs/graphql": "^13.4.2",
+    "@vendure/asset-server-plugin": "^3.7.1",
+    "@vendure/core": "^3.7.1",
     "@vendure/dashboard": "3.7.1",
     "@vendure/email-plugin": "3.7.1",
     "@vendure/graphiql-plugin": "3.7.1",
@@ -32,5 +33,8 @@
     "ts-node": "10.9.2",
     "typescript": "5.8.2",
     "vite": "7.3.6"
+  },
+  "overrides": {
+    "sharp": "0.35.3"
   }
 }
