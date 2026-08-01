@@ -34,7 +34,7 @@ spec:
         - name: ghcr-secret
       containers:
         - name: vendure-app
-          image: ghcr.io/shresthauden10/my-shop-prod:latest
+          image: ghcr.io/shresthauden10/hyperce:${IMAGE_TAG:-latest}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

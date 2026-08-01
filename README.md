@@ -136,6 +136,39 @@ You can also run any pending migrations manually, without starting the server vi
 
 ---
 
+## CI/CD Pipeline
+
+This repo uses three GitHub Actions workflows:
+
+- **[`ci.yaml`](./.github/workflows/ci.yaml)** — runs on every PR into `main`. Three parallel jobs: builds the app (`npm ci && npm run build`), lints and validates the Helm chart (`helm lint` + render + dry-run apply against a `kind` cluster), and builds the production Docker image without pushing it.
+- **[`docker-publish.yml`](./.github/workflows/docker-publish.yml)** — runs on push to `main`. Builds the production image, scans it with [Trivy](https://trivy.dev) (fails the build on CRITICAL/HIGH CVEs not listed in [`.trivyignore`](./.trivyignore)), pushes it to `ghcr.io/<owner>/hyperce`, and signs it keylessly with [cosign](https://github.com/sigstore/cosign).
+- **[`deploy-compose.yaml`](./.github/workflows/deploy-compose.yaml)** — runs after `docker-publish.yml` succeeds on `main`. Checks out the triggering commit, ships the repo's [`docker-compose.prod.yml`](./docker-compose.prod.yml) to the production server over SSH, and runs `docker compose pull && up -d` there.
+
+### Required GitHub Actions secrets
+
+| Secret | Purpose |
+| --- | --- |
+| `SSH_HOST`, `SSH_USER`, `SSH_PORT`, `SSH_PRIVATE_KEY` | SSH access to the deploy target |
+| `GHCR_USER`, `GHCR_PAT` | Pulling the image from GHCR on the server |
+
+### Server prerequisites
+
+The deploy workflow writes `docker-compose.prod.yml` to `/opt/vendure-shop` on every run (creating the directory if it doesn't exist), but it does **not** manage runtime secrets. Before the first deploy, create `/opt/vendure-shop/.env` on the server (filename must be exactly `.env` for Compose to auto-load it) containing:
+
+```
+DB_USERNAME=...
+DB_PASSWORD=...
+COOKIE_SECRET=...
+SUPERADMIN_USERNAME=...
+SUPERADMIN_PASSWORD=...
+```
+
+(see [`.env.production`](./.env.production) locally for the full set of keys used by the app — do not commit this file).
+
+### Kubernetes alternative
+
+A [Helm chart](./helm/vendure) is included and validated in CI, as an alternative to the Docker Compose deployment above.
+
 ## Troubleshooting
 
 ### Error: Could not load the "sharp" module using the \[OS\]-x\[Architecture\] runtime when running Vendure server.
