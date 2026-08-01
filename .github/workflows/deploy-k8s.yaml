@@ -1,0 +1,121 @@
+name: Deploy to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (defaults to sha-<HEAD of the branch being run>)"
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-k8s
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Determine image tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "IMAGE_TAG=${{ github.event.inputs.image_tag }}" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE_TAG=sha-$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Encode bootstrap script for transfer
+        run: echo "BOOTSTRAP_B64=$(base64 -w0 scripts/bootstrap-server.sh)" >> "$GITHUB_ENV"
+
+      - name: Ensure Docker, kind, kubectl, helm are installed on the server
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: BOOTSTRAP_B64
+          script: |
+            set -euo pipefail
+            mkdir -p /opt/vendure-k8s
+            echo "$BOOTSTRAP_B64" | base64 -d > /opt/vendure-k8s/bootstrap-server.sh
+            chmod +x /opt/vendure-k8s/bootstrap-server.sh
+            /opt/vendure-k8s/bootstrap-server.sh
+
+      - name: Bundle k8s manifests for transfer
+        run: |
+          tar czf /tmp/k8s-bundle.tar.gz k8s kind-cluster.yaml
+          echo "K8S_B64=$(base64 -w0 /tmp/k8s-bundle.tar.gz)" >> "$GITHUB_ENV"
+
+      - name: Ensure kind cluster exists and deploy
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: K8S_B64,IMAGE_TAG
+          script: |
+            set -euo pipefail
+            export KUBECONFIG="$HOME/.kube/config"
+
+            mkdir -p /opt/vendure-k8s
+            cd /opt/vendure-k8s
+            echo "$K8S_B64" | base64 -d | tar xzf -
+
+            command -v envsubst >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y gettext-base)
+
+            if ! kind get clusters | grep -qx vendure; then
+              kind create cluster --name vendure --config kind-cluster.yaml
+            fi
+
+            if ! kubectl get ns ingress-nginx >/dev/null 2>&1; then
+              kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+              kubectl wait --namespace ingress-nginx \
+                --for=condition=ready pod \
+                --selector=app.kubernetes.io/component=controller \
+                --timeout=180s
+            fi
+
+            kubectl apply -f k8s/namespace.yaml
+            kubectl apply -f k8s/serviceaccount.yaml
+            kubectl apply -f k8s/configmap.yaml
+            kubectl apply -f k8s/assets-pvc.yaml
+
+            kubectl create secret docker-registry ghcr-secret \
+              --namespace vendure \
+              --docker-server=ghcr.io \
+              --docker-username="${{ secrets.GHCR_USER }}" \
+              --docker-password="${{ secrets.GHCR_PAT }}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+
+            DB_USERNAME="${{ secrets.DB_USERNAME }}" \
+            DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            COOKIE_SECRET="${{ secrets.COOKIE_SECRET }}" \
+            SUPERADMIN_USERNAME="${{ secrets.SUPERADMIN_USERNAME }}" \
+            SUPERADMIN_PASSWORD="${{ secrets.SUPERADMIN_PASSWORD }}" \
+              envsubst < k8s/vendure-secrets.templates.yaml | kubectl apply -f -
+
+            kubectl apply -f k8s/postgres-statefulset.yaml
+            kubectl rollout status statefulset/vendure-postgres -n vendure --timeout=120s
+
+            kubectl delete job/vendure-app-migrate -n vendure --ignore-not-found
+            sed "s|\${IMAGE_TAG:-latest}|$IMAGE_TAG|g" k8s/migration-job.yaml | kubectl apply -f -
+            kubectl wait --for=condition=complete job/vendure-app-migrate -n vendure --timeout=300s || {
+              kubectl logs job/vendure-app-migrate -n vendure --tail=200 || true
+              exit 1
+            }
+
+            sed "s|\${IMAGE_TAG:-latest}|$IMAGE_TAG|g" k8s/deployment.yaml | kubectl apply -f -
+            kubectl apply -f k8s/service.yaml
+            kubectl apply -f k8s/ingress.yaml
+            kubectl rollout status deployment/vendure-app -n vendure --timeout=180s
+
+            echo "Deployed image tag: $IMAGE_TAG"
+            kubectl get pods -n vendure -o wide

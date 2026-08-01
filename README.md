@@ -138,18 +138,24 @@ You can also run any pending migrations manually, without starting the server vi
 
 ## CI/CD Pipeline
 
-This repo uses three GitHub Actions workflows:
+This repo uses four GitHub Actions workflows:
 
 - **[`ci.yaml`](./.github/workflows/ci.yaml)** — runs on every PR into `main`. Three parallel jobs: builds the app (`npm ci && npm run build`), lints and validates the Helm chart (`helm lint` + render + dry-run apply against a `kind` cluster), and builds the production Docker image without pushing it.
 - **[`docker-publish.yml`](./.github/workflows/docker-publish.yml)** — runs on push to `main`. Builds the production image, scans it with [Trivy](https://trivy.dev) (fails the build on CRITICAL/HIGH CVEs not listed in [`.trivyignore`](./.trivyignore)), pushes it to `ghcr.io/<owner>/hyperce`, and signs it keylessly with [cosign](https://github.com/sigstore/cosign).
 - **[`deploy-compose.yaml`](./.github/workflows/deploy-compose.yaml)** — runs after `docker-publish.yml` succeeds on `main`. Checks out the triggering commit, ships the repo's [`docker-compose.prod.yml`](./docker-compose.prod.yml) to the production server over SSH, and runs `docker compose pull && up -d` there.
+- **[`deploy-k8s.yaml`](./.github/workflows/deploy-k8s.yaml)** — manual (`workflow_dispatch`), so it doesn't fire on every `main` push alongside the Compose deploy. Runs against the **same server** as the Compose deploy, over the same SSH secrets. First SSH session: transfers and runs [`scripts/bootstrap-server.sh`](./scripts/bootstrap-server.sh), which idempotently installs Docker, kind, kubectl, and Helm (skipping anything already present). Second, fresh SSH session (needed so a just-added `docker` group membership actually takes effect): creates a local `kind` cluster named `vendure` if one doesn't exist yet, installs the `ingress-nginx` controller for kind if missing, renders app secrets and the GHCR pull secret from GitHub Actions secrets, then applies the manifests in [`k8s/`](./k8s) with `kubectl` in order: namespace → service account/config → secrets → Postgres (waits for it to be ready) → migration Job (waits for completion, deletes+recreates the Job each run since Job specs are immutable) → app Deployment/Service/Ingress (waits for rollout). Run it from the **Actions** tab, optionally passing an `image_tag` input; it defaults to `sha-<HEAD commit>`.
 
 ### Required GitHub Actions secrets
 
-| Secret | Purpose |
-| --- | --- |
-| `SSH_HOST`, `SSH_USER`, `SSH_PORT`, `SSH_PRIVATE_KEY` | SSH access to the deploy target |
-| `GHCR_USER`, `GHCR_PAT` | Pulling the image from GHCR on the server |
+| Secret | Purpose | Used by |
+| --- | --- | --- |
+| `SSH_HOST`, `SSH_USER`, `SSH_PORT`, `SSH_PRIVATE_KEY` | SSH access to the deploy server (shared by both workflows) | `deploy-compose.yaml`, `deploy-k8s.yaml` |
+| `GHCR_USER`, `GHCR_PAT` | Pulling the image from GHCR | `deploy-compose.yaml`, `deploy-k8s.yaml` |
+| `DB_USERNAME`, `DB_PASSWORD`, `COOKIE_SECRET`, `SUPERADMIN_USERNAME`, `SUPERADMIN_PASSWORD` | Rendered into the `vendure-secrets` Kubernetes Secret at deploy time | `deploy-k8s.yaml` |
+
+Unlike the Compose path (where these values live in a `.env` file created once by hand on the server), the Kubernetes pipeline injects them fresh from GitHub secrets on every run — nothing sensitive needs to be pre-staged on the cluster.
+
+The SSH user needs **passwordless sudo** on the server — `bootstrap-server.sh` uses it for `apt-get`/installing binaries to `/usr/local/bin`. No cloud Kubernetes account or kubeconfig secret is needed: the cluster is a local `kind` cluster living in Docker on the same box, created on first run.
 
 ### Server prerequisites
 
@@ -167,7 +173,72 @@ SUPERADMIN_PASSWORD=...
 
 ### Kubernetes alternative
 
-A [Helm chart](./helm/vendure) is included and validated in CI, as an alternative to the Docker Compose deployment above.
+A [Helm chart](./helm/vendure) is included and validated in CI (`helm lint` + render + dry-run apply). It's the source of truth for the manifest shape — the static files in [`k8s/`](./k8s) mirror its rendered output and are what [`deploy-k8s.yaml`](./.github/workflows/deploy-k8s.yaml) actually applies with `kubectl`. If you change the Helm chart, re-render and update the `k8s/` files to match (`helm template vendure ./helm/vendure ... > /tmp/out.yaml`, then copy the relevant resources over) so the two don't drift.
+
+## Running the project
+
+### Locally
+
+**Option A — Node directly**, against a Postgres container:
+
+```shell
+docker compose up postgres -d      # starts Postgres on localhost:6543
+npm ci
+npm run dev                        # server + worker + dashboard, reads ./.env
+```
+
+**Option B — everything in Docker**:
+
+```shell
+docker compose up                  # app (hot-reloading) + Postgres
+```
+
+Both read config from [`.env`](./.env) (gitignored — copy the keys documented in the [Migrations](#migrations) section / `.env.production` below and fill in your own values). The app is served at `http://localhost:3000`.
+
+### In the cloud
+
+**Docker Compose (default production path):** push to `main` — `docker-publish.yml` builds/scans/signs the image, then `deploy-compose.yaml` ships [`docker-compose.prod.yml`](./docker-compose.prod.yml) to the server over SSH and runs `docker compose up -d`. See [Server prerequisites](#server-prerequisites) above. No manual CLI steps needed once the secrets are configured.
+
+**Kubernetes (via the CI pipeline):** from the **Actions** tab, run **Deploy to Kubernetes** (`deploy-k8s.yaml`) against `main` (or any branch/tag), after configuring the secrets listed above. This is the recommended way to deploy to a k8s cluster — it's what keeps the `image_tag`, migration ordering, and rollout waits consistent.
+
+**Kubernetes (manual `kubectl`/`helm`, e.g. for a first-time cluster setup or local `kind` testing):**
+
+```shell
+# Point kubectl at your cluster first (kubeconfig, `aws eks update-kubeconfig`, `doctl kubernetes cluster kubeconfig save`, etc.)
+kubectl config current-context
+
+# Optional: spin up a local cluster for testing
+kind create cluster --config kind-cluster.yaml
+
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/serviceaccount.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/assets-pvc.yaml
+
+# GHCR pull secret (or use your own `ghcr-secret.yaml`, gitignored)
+kubectl create secret docker-registry ghcr-secret \
+  --namespace vendure --docker-server=ghcr.io \
+  --docker-username=<gh-username> --docker-password=<gh-pat>
+
+# App secrets: copy k8s/vendure-secrets.templates.yaml, fill in real values, apply it
+# (or use values.secrets.yaml with Helm — see below)
+kubectl apply -f k8s/secret.yaml
+
+kubectl apply -f k8s/postgres-statefulset.yaml
+kubectl apply -f k8s/migration-job.yaml   # replace ${IMAGE_TAG:-latest} with a real tag first
+kubectl apply -f k8s/deployment.yaml      # same
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/ingress.yaml
+```
+
+Or via Helm, using the chart directly:
+
+```shell
+helm upgrade --install vendure ./helm/vendure \
+  --namespace vendure --create-namespace \
+  -f values.secrets.yaml \
+  --set image.tag=<image-tag>
+```
 
 ## Troubleshooting
 
