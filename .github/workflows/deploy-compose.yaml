@@ -29,6 +29,24 @@ jobs:
       - name: Encode compose file for transfer
         run: echo "COMPOSE_B64=$(base64 -w0 docker-compose.prod.yml)" >> "$GITHUB_ENV"
 
+      - name: Encode bootstrap script for transfer
+        run: echo "BOOTSTRAP_B64=$(base64 -w0 scripts/bootstrap-server.sh)" >> "$GITHUB_ENV"
+
+      - name: Ensure Docker + Compose are installed on the server
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: BOOTSTRAP_B64
+          script: |
+            set -euo pipefail
+            mkdir -p /opt/vendure-shop
+            echo "$BOOTSTRAP_B64" | base64 -d > /opt/vendure-shop/bootstrap-server.sh
+            chmod +x /opt/vendure-shop/bootstrap-server.sh
+            /opt/vendure-shop/bootstrap-server.sh
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
