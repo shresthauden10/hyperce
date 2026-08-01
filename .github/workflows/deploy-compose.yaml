@@ -18,8 +18,16 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout triggering commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
       - name: Set image tag from triggering commit
         run: echo "IMAGE_TAG=sha-${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
+
+      - name: Encode compose file for transfer
+        run: echo "COMPOSE_B64=$(base64 -w0 docker-compose.prod.yml)" >> "$GITHUB_ENV"
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
@@ -28,9 +36,13 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          envs: COMPOSE_B64
           script: |
             set -euo pipefail
+            mkdir -p /opt/vendure-shop
             cd /opt/vendure-shop
+
+            echo "$COMPOSE_B64" | base64 -d > docker-compose.prod.yml
 
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ secrets.GHCR_USER }} --password-stdin
 
