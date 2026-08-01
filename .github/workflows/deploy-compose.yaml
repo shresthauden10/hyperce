@@ -35,8 +35,8 @@ jobs:
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ secrets.GHCR_USER }} --password-stdin
 
             export IMAGE_TAG=sha-${{ github.event.workflow_run.head_sha }}
-            docker compose -f docker-compose.prod.yaml pull
-            docker compose -f docker-compose.prod.yaml up -d
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
 
             echo "Deployed image tag: $IMAGE_TAG"
-            docker compose -f docker-compose.prod.yaml ps
+            docker compose -f docker-compose.prod.yml ps
